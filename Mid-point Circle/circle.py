@@ -12,6 +12,7 @@ clock = pygame.time.Clock()
 def mid_point_circle(x1, y1, r):
     x=0
     y=r
+    plot_points(x1,y1,x,y)
     p=1-r
     while x<=y:
         x+=1
