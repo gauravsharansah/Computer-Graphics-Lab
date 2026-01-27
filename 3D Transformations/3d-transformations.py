@@ -77,13 +77,13 @@ def rotate(vertices,axis,angle,xr=0,yr=0,zr=0):
     sin_theta=math.sin(rad)
     for x,y,z in vertices:
         if axis=='z':
-            nx=int(cos_theta*(y-yr) - sin_theta*(z-zr) + xr)
-            ny=int(sin_theta*(y-yr) + cos_theta*(z-zr) + yr)
+            nx=int(cos_theta*(x-xr) - sin_theta*(y-yr) + xr)
+            ny=int(sin_theta*(x-xr) + cos_theta*(y-yr) + yr)
             nz=z
         elif axis=='x':
             nx=x
-            ny=int(cos_theta*(x-xr) - sin_theta*(z-zr) + yr)
-            nz=int(sin_theta*(x-xr) + cos_theta*(z-zr) + zr)
+            ny=int(cos_theta*(y-yr) - sin_theta*(z-zr) + yr)
+            nz=int(sin_theta*(y-yr) + cos_theta*(z-zr) + zr)
         elif axis=='y':
             nx=int(cos_theta*(x-xr) - sin_theta*(z-zr) + xr)
             ny=y
