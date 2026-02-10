@@ -33,7 +33,7 @@ def mid_point_ellipse(xc, yc, a, b):
             p2=p2-(2*a*a*y)+(a*a)
         else:
             x+=1
-            p2=p2+(2*b*b*x)-(2*a*a*y)+(b*b)
+            p2=p2+(2*b*b*x)-(2*a*a*y)+(a*a)
         pygame.display.update()
         pygame.time.delay(10)
         plot_points(xc,yc,x,y)
