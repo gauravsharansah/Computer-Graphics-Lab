@@ -1,0 +1,323 @@
+{
+  "current_turn": "black",
+  "pieces": [
+    {
+      "name": "rook",
+      "color": "white",
+      "col": 0.0,
+      "row": 0.0,
+      "has_moved": false
+    },
+    {
+      "name": "knight",
+      "color": "white",
+      "col": 1.0,
+      "row": 0.0,
+      "has_moved": false
+    },
+    {
+      "name": "bishop",
+      "color": "white",
+      "col": 5.0,
+      "row": 3.0,
+      "has_moved": true
+    },
+    {
+      "name": "king",
+      "color": "white",
+      "col": 3.0,
+      "row": 0.0,
+      "has_moved": false
+    },
+    {
+      "name": "queen",
+      "color": "white",
+      "col": 2.0,
+      "row": 6.0,
+      "has_moved": true
+    },
+    {
+      "name": "bishop",
+      "color": "white",
+      "col": 5.0,
+      "row": 0.0,
+      "has_moved": false
+    },
+    {
+      "name": "knight",
+      "color": "white",
+      "col": 6.0,
+      "row": 0.0,
+      "has_moved": false
+    },
+    {
+      "name": "rook",
+      "color": "white",
+      "col": 7.0,
+      "row": 0.0,
+      "has_moved": false
+    },
+    {
+      "name": "pawn",
+      "color": "white",
+      "col": 0.0,
+      "row": 1.0,
+      "has_moved": false
+    },
+    {
+      "name": "pawn",
+      "color": "white",
+      "col": 1.0,
+      "row": 1.0,
+      "has_moved": false
+    },
+    {
+      "name": "pawn",
+      "color": "white",
+      "col": 2.0,
+      "row": 1.0,
+      "has_moved": false
+    },
+    {
+      "name": "pawn",
+      "color": "white",
+      "col": 3.0,
+      "row": 3.0,
+      "has_moved": true
+    },
+    {
+      "name": "pawn",
+      "color": "white",
+      "col": 4.0,
+      "row": 1.0,
+      "has_moved": false
+    },
+    {
+      "name": "pawn",
+      "color": "white",
+      "col": 5.0,
+      "row": 1.0,
+      "has_moved": false
+    },
+    {
+      "name": "pawn",
+      "color": "white",
+      "col": 6.0,
+      "row": 1.0,
+      "has_moved": false
+    },
+    {
+      "name": "pawn",
+      "color": "white",
+      "col": 7.0,
+      "row": 1.0,
+      "has_moved": false
+    },
+    {
+      "name": "rook",
+      "color": "black",
+      "col": 0.0,
+      "row": 7.0,
+      "has_moved": false
+    },
+    {
+      "name": "knight",
+      "color": "black",
+      "col": 1.0,
+      "row": 7.0,
+      "has_moved": false
+    },
+    {
+      "name": "bishop",
+      "color": "black",
+      "col": 2.0,
+      "row": 7.0,
+      "has_moved": false
+    },
+    {
+      "name": "king",
+      "color": "black",
+      "col": 3.0,
+      "row": 7.0,
+      "has_moved": false
+    },
+    {
+      "name": "queen",
+      "color": "black",
+      "col": 4.0,
+      "row": 7.0,
+      "has_moved": false
+    },
+    {
+      "name": "bishop",
+      "color": "black",
+      "col": 5.0,
+      "row": 7.0,
+      "has_moved": false
+    },
+    {
+      "name": "knight",
+      "color": "black",
+      "col": 6.0,
+      "row": 7.0,
+      "has_moved": false
+    },
+    {
+      "name": "rook",
+      "color": "black",
+      "col": 7.0,
+      "row": 7.0,
+      "has_moved": false
+    },
+    {
+      "name": "pawn",
+      "color": "black",
+      "col": 0.0,
+      "row": 4.0,
+      "has_moved": true
+    },
+    {
+      "name": "pawn",
+      "color": "black",
+      "col": 1.0,
+      "row": 6.0,
+      "has_moved": false
+    },
+    {
+      "name": "pawn",
+      "color": "black",
+      "col": 3.0,
+      "row": 6.0,
+      "has_moved": false
+    },
+    {
+      "name": "pawn",
+      "color": "black",
+      "col": 4.0,
+      "row": 6.0,
+      "has_moved": false
+    },
+    {
+      "name": "pawn",
+      "color": "black",
+      "col": 5.0,
+      "row": 4.0,
+      "has_moved": true
+    },
+    {
+      "name": "pawn",
+      "color": "black",
+      "col": 6.0,
+      "row": 5.0,
+      "has_moved": true
+    },
+    {
+      "name": "pawn",
+      "color": "black",
+      "col": 7.0,
+      "row": 6.0,
+      "has_moved": false
+    }
+  ],
+  "captured_by_white": [
+    "pawn"
+  ],
+  "captured_by_black": [],
+  "move_history": [
+    {
+      "piece": "pawn",
+      "color": "white",
+      "from": [
+        3,
+        1
+      ],
+      "to": [
+        3,
+        3
+      ],
+      "label": "e2e4"
+    },
+    {
+      "piece": "pawn",
+      "color": "black",
+      "from": [
+        5,
+        6
+      ],
+      "to": [
+        5,
+        4
+      ],
+      "label": "c7c5"
+    },
+    {
+      "piece": "bishop",
+      "color": "white",
+      "from": [
+        2,
+        0
+      ],
+      "to": [
+        5,
+        3
+      ],
+      "label": "Bf1c4"
+    },
+    {
+      "piece": "pawn",
+      "color": "black",
+      "from": [
+        6,
+        6
+      ],
+      "to": [
+        6,
+        5
+      ],
+      "label": "b7b6"
+    },
+    {
+      "piece": "queen",
+      "color": "white",
+      "from": [
+        4,
+        0
+      ],
+      "to": [
+        2,
+        2
+      ],
+      "label": "Qd1f3"
+    },
+    {
+      "piece": "pawn",
+      "color": "black",
+      "from": [
+        0,
+        6
+      ],
+      "to": [
+        0,
+        4
+      ],
+      "label": "h7h5"
+    },
+    {
+      "piece": "queen",
+      "color": "white",
+      "from": [
+        2,
+        2
+      ],
+      "to": [
+        2,
+        6
+      ],
+      "label": "Qf3f7"
+    }
+  ],
+  "last_pawn_double": null,
+  "white_time": 577.705,
+  "black_time": 587.8899999999998,
+  "time_control": 600
+}

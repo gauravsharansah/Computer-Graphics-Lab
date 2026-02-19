@@ -44,6 +44,21 @@ _pending_check_update = False
 
 font_sm_global   = None
 
+# ==========================
+# TIME CONTROLS
+# ==========================
+TIME_OPTIONS = [10*60, 15*60, 30*60]  # seconds
+TIME_LABELS  = ["10 min", "15 min", "30 min"]
+white_time   = None   # seconds remaining (float), None = untimed
+black_time   = None
+time_control = 10*60  # default: 10 minutes per player
+last_tick_time = None  # pygame.time.get_ticks() at last frame
+time_select_active = False  # start game immediately with default timer
+time_select_rects  = {}
+FLAG_FALLEN = False  # True when a player runs out of time
+game_paused = False  # True when game is paused
+pause_rect  = None   # clickable pause/resume button rect
+
 
 # ==========================
 # PIECE CLASS
@@ -367,6 +382,9 @@ def save_game(slot=None):
         "captured_by_black":captured_by_black,
         "move_history":move_history,
         "last_pawn_double": None if last_pawn_double is None else last_pawn_double.to_dict(),
+        "white_time": white_time,
+        "black_time": black_time,
+        "time_control": time_control,
     }
     with open(path,"w") as f: json.dump(data,f,indent=2)
     return fname
@@ -389,6 +407,24 @@ def load_game(fname):
     selected_piece=None; promotion_active=False; promotion_piece=None
     in_check=False; is_checkmate=False; is_stalemate=False
     check_flash_t=0; game_over=False; winner=None; _pending_check_update=False
+    global white_time, black_time, last_tick_time, FLAG_FALLEN, time_select_active
+    global time_control
+    saved_tc = data.get("time_control", time_control)
+    time_control = saved_tc
+    wt = data.get("white_time")
+    bt = data.get("black_time")
+    # If save has time data, restore it; otherwise fall back to full time_control
+    if wt is not None and bt is not None:
+        white_time = float(wt)
+        black_time = float(bt)
+    elif time_control is not None:
+        white_time = float(time_control)
+        black_time = float(time_control)
+    else:
+        white_time = None
+        black_time = None
+    last_tick_time=None; FLAG_FALLEN=False; time_select_active=False
+    global game_paused; game_paused=False
     _update_check_state()
     return True
 
@@ -411,6 +447,13 @@ def initialize_pieces():
     captured_by_white=[];captured_by_black=[]
     in_check=False;is_checkmate=False;is_stalemate=False
     check_flash_t=0;game_over=False;winner=None;_pending_check_update=False
+    global white_time,black_time,last_tick_time,FLAG_FALLEN,time_select_active
+    if time_control is not None:
+        white_time=float(time_control); black_time=float(time_control)
+    else:
+        white_time=None; black_time=None
+    last_tick_time=None; FLAG_FALLEN=False; time_select_active=False
+    global game_paused; game_paused=False
     
     # Files h→a (col 0=h, col 7=a) so e1 (col 3) is DARK
     pieces.append(Piece("rook",   "white", 0, 0))  # h1
@@ -586,10 +629,10 @@ def draw_chesscom_captured(surface, font_xs, font_sm, font_md):
         for n in lst: c[n]=c.get(n,0)+1
         return c
     def render_strip(surface, captured_list, strip_y, strip_h,
-                     player_label, player_col, adv_for_this_player):
-        pygame.draw.rect(surface,(18,18,28,190),(PANEL_X, strip_y, STRIP_W, strip_h),border_radius=6)
-        pygame.draw.rect(surface,(80,70,40,160),(PANEL_X, strip_y, STRIP_W, strip_h),1,border_radius=6)
-        pl_img = font_sm.render(player_label, True, player_col)
+                     player_label, label_col, piece_col, bg_col, border_col, badge_col, adv_for_this_player):
+        pygame.draw.rect(surface, bg_col, (PANEL_X, strip_y, STRIP_W, strip_h), border_radius=6)
+        pygame.draw.rect(surface, border_col, (PANEL_X, strip_y, STRIP_W, strip_h), 1, border_radius=6)
+        pl_img = font_sm.render(player_label, True, label_col)
         surface.blit(pl_img,(PANEL_X+8, strip_y+4))
         cx=PANEL_X+8; cy=strip_y+24
         counts = count(captured_list)
@@ -597,24 +640,172 @@ def draw_chesscom_captured(surface, font_xs, font_sm, font_md):
             cnt = counts.get(pname,0)
             if cnt==0: continue
             for _ in range(cnt):
-                pi = font_xs.render(SYMS.get(pname,"?"), True, player_col)
+                pi = font_xs.render(SYMS.get(pname,"?"), True, piece_col)
                 surface.blit(pi,(cx,cy)); cx+=pi.get_width()+SYM_PAD
                 if cx > PANEL_X+STRIP_W-18:
                     cx=PANEL_X+8; cy+=pi.get_height()+2
         if adv_for_this_player and adv_amt>0:
-            badge = font_sm.render(f"+{adv_amt}", True,(220,220,100))
+            badge = font_sm.render(f"+{adv_amt}", True, badge_col)
             bx=cx+6; by=cy+2
             if bx+badge.get_width()+6 > PANEL_X+STRIP_W:
                 bx=PANEL_X+8; by=cy+font_xs.get_height()+4
             surface.blit(badge,(bx,by))
+
     top_y=55; strip_h=68
+    # Top panel: "Black captured" = white pieces captured by black player
+    # Show pieces in WHITE color on DARK background (white pieces on dark bg)
     render_strip(surface, captured_by_black, top_y, strip_h,
                  "Black", (200,200,200),
+                 piece_col=(240,240,240),        # white piece symbols
+                 bg_col=(25,25,35,210),           # dark background
+                 border_col=(80,70,40,160),
+                 badge_col=(240,240,240),         # white +N badge on dark bg
                  adv_for_this_player=(adv_color=="black"))
+
     bot_y = HEIGHT - strip_h - 55
+    # Bottom panel: "White captured" = black pieces captured by white player
+    # Show pieces in BLACK color on LIGHT background (black pieces on light bg)
     render_strip(surface, captured_by_white, bot_y, strip_h,
-                 "White", (255,255,255),
+                 "White", (30,30,30),
+                 piece_col=(15,10,5),             # dark/black piece symbols
+                 bg_col=(210,200,175,220),         # light/cream background
+                 border_col=(140,120,60,200),
+                 badge_col=(20,15,5),              # dark +N badge on light bg
                  adv_for_this_player=(adv_color=="white"))
+
+
+# ==========================
+# TIME SELECTION SCREEN
+# ==========================
+def draw_time_select(surface, font_sm, font_md, font_lg):
+    global time_select_rects
+    time_select_rects = {}
+    ov = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    ov.fill((0,0,0,200)); surface.blit(ov,(0,0))
+    bw,bh = 460,300; bx=(WIDTH-bw)//2; by=(HEIGHT-bh)//2
+    pygame.draw.rect(surface,(18,20,35,250),(bx,by,bw,bh),border_radius=14)
+    pygame.draw.rect(surface,(200,180,50,255),(bx,by,bw,bh),2,border_radius=14)
+    pygame.draw.rect(surface,(40,35,10,230),(bx+2,by+2,bw-4,56),border_radius=12)
+    ti = font_lg.render("Select Time Control", True, (230,210,80))
+    surface.blit(ti,(bx+(bw-ti.get_width())//2, by+14))
+    sub = font_sm.render("Choose a time limit per player for the whole game", True, (180,170,140))
+    surface.blit(sub,(bx+(bw-sub.get_width())//2, by+58))
+    BTN_W,BTN_H = 110,80; gap=20
+    total_w = len(TIME_OPTIONS)*(BTN_W+gap)-gap
+    sx = bx+(bw-total_w)//2; sy=by+92
+    for i,(secs,label) in enumerate(zip(TIME_OPTIONS,TIME_LABELS)):
+        rx=sx+i*(BTN_W+gap)
+        r=pygame.Rect(rx,sy,BTN_W,BTN_H)
+        pygame.draw.rect(surface,(40,80,140,230),r,border_radius=10)
+        pygame.draw.rect(surface,(160,140,40,255),r,2,border_radius=10)
+        mins=secs//60
+        big=font_lg.render(f"{mins}", True,(240,240,240))
+        surface.blit(big,(rx+(BTN_W-big.get_width())//2, sy+10))
+        sm=font_sm.render("min", True,(180,190,210))
+        surface.blit(sm,(rx+(BTN_W-sm.get_width())//2, sy+50))
+        time_select_rects[secs]=r
+    # No timer button
+    nr=pygame.Rect(bx+(bw-150)//2, sy+BTN_H+20, 150, 44)
+    pygame.draw.rect(surface,(60,55,50,200),nr,border_radius=8)
+    pygame.draw.rect(surface,(120,110,60,200),nr,1,border_radius=8)
+    nl=font_md.render("No Timer", True,(200,200,190))
+    surface.blit(nl,(nr.x+(150-nl.get_width())//2, nr.y+(44-nl.get_height())//2))
+    time_select_rects[0]=nr
+
+def handle_time_select_click(pos):
+    global time_control, time_select_active, white_time, black_time
+    global last_tick_time, FLAG_FALLEN
+    for secs,rect in time_select_rects.items():
+        if rect.collidepoint(pos):
+            time_control = secs if secs>0 else None
+            time_select_active = False
+            if time_control:
+                white_time=float(time_control); black_time=float(time_control)
+            else:
+                white_time=None; black_time=None
+            last_tick_time=None; FLAG_FALLEN=False
+            return True
+    return False
+
+
+# ==========================
+# DRAW CLOCK DISPLAY
+# ==========================
+def draw_clocks(surface, font_md, font_lg):
+    global pause_rect
+    if white_time is None and black_time is None: return
+    def fmt(t):
+        t=max(0,int(t)); m=t//60; s=t%60
+        return f"{m}:{s:02d}"
+    CX=WIDTH-185; CW=175
+    wt=white_time if white_time is not None else 0
+    bt=black_time  if black_time  is not None else 0
+    w_active=(current_turn=="white") and not game_over and not game_paused
+    b_active=(current_turn=="black") and not game_over and not game_paused
+    w_low = wt<30
+    b_low = bt<30
+    def draw_clock_box(y, remaining, active, low):
+        bg=(60,120,60,230) if active else (30,30,40,200)
+        border=(80,200,80,255) if active else (80,70,40,160)
+        if low:
+            bg=(140,30,30,230) if active else (80,20,20,200)
+            border=(255,80,80,255) if active else (160,50,50,160)
+        if game_paused:
+            bg=(50,50,80,220); border=(160,140,60,200)
+        pygame.draw.rect(surface,bg,(CX,y,CW,44),border_radius=8)
+        pygame.draw.rect(surface,border,(CX,y,CW,44),2,border_radius=8)
+        tc=(255,255,255) if active else (160,160,160)
+        if low and not game_paused: tc=(255,180,180) if active else (200,100,100)
+        if game_paused: tc=(180,175,210)
+        txt=font_lg.render(fmt(remaining),True,tc)
+        surface.blit(txt,(CX+(CW-txt.get_width())//2, y+(44-txt.get_height())//2))
+    top_y=130
+    bot_y=HEIGHT-130-44
+    draw_clock_box(top_y, bt, b_active, b_low)
+    draw_clock_box(bot_y, wt, w_active, w_low)
+    blab=font_md.render("Black",True,(180,180,200))
+    wlab=font_md.render("White",True,(200,190,160))
+    surface.blit(blab,(CX+(CW-blab.get_width())//2, top_y-22))
+    surface.blit(wlab,(CX+(CW-wlab.get_width())//2, bot_y-22))
+
+    # ── Pause / Resume button between the two clocks ───────────────────────
+    if not game_over and not time_select_active:
+        mid_y = (top_y + 44 + bot_y) // 2
+        btn_w, btn_h = 90, 32
+        btn_x = CX + (CW - btn_w) // 2
+        btn_y = mid_y - btn_h // 2
+        if game_paused:
+            bg=(70,130,70,240); border=(100,210,100,255); label="▶  Resume"
+        else:
+            bg=(60,60,100,220); border=(120,110,160,255); label="⏸  Pause"
+        r = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+        pygame.draw.rect(surface, bg, r, border_radius=7)
+        pygame.draw.rect(surface, border, r, 2, border_radius=7)
+        lbl = font_md.render(label, True, (230,230,230))
+        surface.blit(lbl, (btn_x+(btn_w-lbl.get_width())//2, btn_y+(btn_h-lbl.get_height())//2))
+        pause_rect = r
+
+    # ── Pause overlay on board area ────────────────────────────────────────
+    if game_paused:
+        ov = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        ov.fill((0, 0, 0, 0))
+        # Dim only the board area (leave right panel visible)
+        board_area = pygame.Rect(0, 0, WIDTH - 190, HEIGHT)
+        pygame.draw.rect(ov, (0, 0, 0, 160), board_area)
+        surface.blit(ov, (0, 0))
+        # "PAUSED" banner centred on board area
+        bx = (WIDTH - 190) // 2
+        pi_font = pygame.font.SysFont("segoeui", 48, bold=True)
+        pi = pi_font.render("PAUSED", True, (230, 210, 80))
+        px = bx - pi.get_width() // 2
+        py = HEIGHT // 2 - pi.get_height() // 2
+        pygame.draw.rect(surface, (20, 18, 10, 220),
+                         (px-20, py-14, pi.get_width()+40, pi.get_height()+28), border_radius=12)
+        pygame.draw.rect(surface, (200, 180, 50, 200),
+                         (px-20, py-14, pi.get_width()+40, pi.get_height()+28), 2, border_radius=12)
+        surface.blit(pi, (px, py))
+        hint = font_md.render("Press P or click Resume to continue", True, (180, 170, 130))
+        surface.blit(hint, (bx - hint.get_width()//2, py + pi.get_height() + 18))
 
 
 # ==========================
@@ -639,7 +830,7 @@ def draw_gameover_screen(surface, font_sm, font_md, font_lg):
         title_txt="WHITE  WINS!"; title_col=(255,255,220)
         bar_col=(40,40,40,240)
     else:
-        title_txt="YELLOW  WINS!"; title_col=(255,220,30)
+        title_txt="BLACK  WINS!"; title_col=(255,220,30)
         bar_col=(40,30,5,240)
     
     pygame.draw.rect(surface,bar_col,(bx+2,by+2,bw-4,72),border_radius=12)
@@ -647,7 +838,11 @@ def draw_gameover_screen(surface, font_sm, font_md, font_lg):
     ti=font_xl.render(title_txt,True,title_col)
     surface.blit(ti,(bx+(bw-ti.get_width())//2, by+20))
     
-    sub_txt="by Checkmate" if (winner and winner!="draw") else ""
+    sub_txt=""
+    if FLAG_FALLEN:
+        sub_txt="on time (flag fallen)"
+    elif winner and winner!="draw":
+        sub_txt="by Checkmate"
     if sub_txt:
         si=font_md.render(sub_txt,True,(200,195,180))
         surface.blit(si,(bx+(bw-si.get_width())//2, by+70))
@@ -777,6 +972,7 @@ def draw_overlay(surface, font_xs, font_sm, font_md, font_lg):
         ("S",False,"Save game (slot 1)"),
         ("L",False,"Load game menu"),
         ("N",False,"New game"),
+        ("P",False,"Pause / Resume"),
         ("Q",False,"Quit to menu"),
         ("R",False,"Hard reset"),
         ("Esc",False,"Deselect"),
@@ -798,6 +994,8 @@ def draw_overlay(surface, font_xs, font_sm, font_md, font_lg):
 
     # ── Captured pieces panel ──────────────────────────────────────────────
     draw_chesscom_captured(surface, font_xs, font_sm, font_md)
+    # ── Clocks ─────────────────────────────────────────────────────────────
+    draw_clocks(surface, font_md, font_lg)
 
     # ── BOARD COORDINATES (h→a, 1-8) ───────────────────────────────────────
     viewport   = glGetIntegerv(GL_VIEWPORT)
@@ -833,7 +1031,9 @@ def draw_overlay(surface, font_xs, font_sm, font_md, font_lg):
         except: pass
 
     # ── Game over / load menus ─────────────────────────────────────────────
-    if game_over:
+    if time_select_active:
+        draw_time_select(surface, font_sm, font_md, font_lg)
+    elif game_over:
         draw_gameover_screen(surface, font_sm, font_md, font_lg)
     if load_menu_active:
         draw_load_menu(surface, font_sm, font_md)
@@ -885,6 +1085,9 @@ def main():
     global selected_piece,board_color_theme,pieces
     global promotion_active,current_turn,font_sm_global
     global check_flash_t,game_over,winner,load_menu_active,_pending_check_update
+    global is_checkmate,is_stalemate,in_check
+    global white_time,black_time,last_tick_time,FLAG_FALLEN,time_select_active,time_control
+    global game_paused, pause_rect
 
     pygame.init(); pygame.font.init()
     screen=pygame.display.set_mode((WIDTH,HEIGHT),DOUBLEBUF|OPENGL)
@@ -903,8 +1106,22 @@ def main():
 
     while True:
         clock.tick(60)
+        dt_ms = clock.get_time()
         if check_flash_t>0: check_flash_t-=1
         if save_notify_t>0: save_notify_t-=1
+
+        # ── Tick clocks ────────────────────────────────────────────────────
+        if not time_select_active and not game_over and not promotion_active and not game_paused:
+            if white_time is not None or black_time is not None:
+                dt_sec = dt_ms / 1000.0
+                if current_turn=="white" and white_time is not None:
+                    white_time = max(0.0, white_time - dt_sec)
+                    if white_time<=0 and not FLAG_FALLEN:
+                        FLAG_FALLEN=True; game_over=True; winner="black"
+                elif current_turn=="black" and black_time is not None:
+                    black_time = max(0.0, black_time - dt_sec)
+                    if black_time<=0 and not FLAG_FALLEN:
+                        FLAG_FALLEN=True; game_over=True; winner="white"
 
         for event in pygame.event.get():
             if event.type==QUIT: pygame.quit(); sys.exit()
@@ -912,13 +1129,16 @@ def main():
             elif event.type==KEYDOWN:
                 if event.key==K_ESCAPE:
                     if load_menu_active: load_menu_active=False
+                    elif game_paused: game_paused=False
                     elif selected_piece: selected_piece.selected=False; selected_piece=None
+                elif event.key==K_p:
+                    if not game_over and not time_select_active:
+                        game_paused = not game_paused
                 elif event.key==K_r:
-                    initialize_pieces(); selected_piece=None
+                    time_select_active=True; selected_piece=None
                 elif event.key==K_n:
-                    initialize_pieces(); selected_piece=None
+                    time_select_active=True; selected_piece=None
                 elif event.key==K_q:
-                    global is_checkmate,is_stalemate,in_check
                     game_over=True
                     if winner is None: winner="draw"
                 elif event.key==K_s:
@@ -951,6 +1171,16 @@ def main():
             elif event.type==MOUSEBUTTONUP:
                 if event.button==1 and not dragging:
                     pos=event.pos
+                    if time_select_active:
+                        handle_time_select_click(pos)
+                        if not time_select_active:
+                            initialize_pieces()
+                        continue
+                    # ── Pause button (always clickable unless game over / time select) ──
+                    if not game_over and pause_rect and pause_rect.collidepoint(pos):
+                        game_paused = not game_paused
+                        continue
+                    if game_paused: continue   # block all other clicks while paused
                     if load_menu_active:
                         for fname,rect in load_menu_rects.items():
                             if rect.collidepoint(pos):
@@ -966,7 +1196,7 @@ def main():
                         for key,rect in gameover_rects.items():
                             if rect.collidepoint(pos):
                                 if key=="new":
-                                    initialize_pieces(); selected_piece=None
+                                    time_select_active=True; selected_piece=None
                                 elif key=="saveq":
                                     fname=save_game(); save_notify=f"Saved: {fname}"; save_notify_t=180
                                     game_over=True
@@ -978,6 +1208,10 @@ def main():
                         continue
                     if promotion_active:
                         handle_promotion_click(pos)
+                    elif game_paused:
+                        # Only allow clicking the pause/resume button
+                        if pause_rect and pause_rect.collidepoint(pos):
+                            game_paused = False
                     else:
                         sq=mouse_to_board(*pos)
                         if sq:
