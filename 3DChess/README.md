@@ -1,16 +1,14 @@
-# ♔ 3D Chess
+# ♚ 3D Chess
 
-A fully playable 3D chess game built with Python, Pygame, and OpenGL. Features a rotating 3D board, animated piece movement, time controls, save/load, and a live HUD with move history, captured pieces, and player clocks.
+A fully playable two-player 3D chess game built with Python, Pygame, and OpenGL. Features a rotating 3D board rendered in a garden-style scene, smooth piece animation, complete chess rules, time controls, pause, save/load, and a live HUD.
 
 ---
 
 ## Requirements
 
-### Python
-Python 3.8 or higher.
+**Python 3.8+**
 
-### Dependencies
-Install all required packages with:
+Install all dependencies with:
 
 ```bash
 pip install pygame PyOpenGL PyOpenGL_accelerate numpy pywavefront
@@ -18,7 +16,7 @@ pip install pygame PyOpenGL PyOpenGL_accelerate numpy pywavefront
 
 | Package | Purpose |
 |---|---|
-| `pygame` | Window, input, 2D overlay rendering |
+| `pygame` | Window management, input, 2D overlay rendering |
 | `PyOpenGL` | 3D board and piece rendering |
 | `numpy` | Shadow circle geometry |
 | `pywavefront` | Loading `.obj` 3D piece models |
@@ -28,8 +26,8 @@ pip install pygame PyOpenGL PyOpenGL_accelerate numpy pywavefront
 ## Project Structure
 
 ```
-project/
-├── main.py          # Main game file
+3DChess/
+├── main.py        # Main game file (run this)
 ├── README.md
 ├── models/           # 3D piece model files (.obj)
 │   ├── white_pawn.obj
@@ -47,81 +45,81 @@ project/
 └── saves/            # Auto-created; stores saved game JSON files
 ```
 
-> **Note:** If a model file is missing, the piece falls back to a simple 3D box placeholder so the game still runs.
+> If a model file is missing the piece renders as a simple 3D box so the game still runs.
 
 ---
 
-## Running the Game
+## Running
 
 ```bash
 python main.py
 ```
 
-The game launches immediately with a **10-minute timer** per player (default). No setup screen — just start playing.
+The game launches immediately with a **10-minute timer per player** (default). A time-selection screen appears — pick a time control or "No Timer" to begin.
 
 ---
 
 ## Features
 
-### 3D Board & Pieces
-- Full 3D perspective view with dynamic lighting (two light sources).
-- Pieces rendered from `.obj` models; auto-scaled and centred on squares.
-- Smooth slide animation for every move.
+### 3D Board & Scene
+- Full 3D perspective view with dual-light Phong shading.
+- Garden-style gradient background: sky blue at top fading to grass green at bottom.
+- Pieces rendered from `.obj` models with automatic bounding-box scaling.
+- Smooth linear-interpolation animation for every move.
 - Circular drop shadows under each piece.
-- Board coordinate labels (a–h, 1–8) projected onto the 3D view.
-- Two board colour themes: **Classic** (wood tones) and **Dark Blue**.
+- Board coordinate labels (a–h files at bottom edge, 1–8 ranks at right edge) projected from 3D world positions into 2D screen space.
+- Two board colour themes: **Classic** (wood tones) and **Red/White** — toggle with `M`.
 
 ### Chess Rules
 - All standard moves: pawns, rooks, knights, bishops, queens, kings.
 - Castling (kingside and queenside).
 - En passant capture.
-- Pawn promotion (choose queen, rook, bishop, or knight via popup menu).
-- Full check and checkmate detection with flashing king highlight.
+- Pawn promotion — popup shows large piece symbols; correct hollow/solid symbols per player colour.
+- Full check and checkmate detection with blinking red king highlight (only the king actually in check flashes — the other king never incorrectly flashes).
 - Stalemate detection.
-- Legal move validation — illegal moves that leave the king in check are blocked.
+- Full legal-move validation via board simulation — no move that leaves the king in check is allowed.
 
-### HUD / Overlay
-- **Move history panel** (top-left): White and Black moves shown side by side in algebraic notation, scrolling as the game progresses.
-- **Turn indicator** (top-right): Shows whose turn it is with a colour-coded badge.
-- **CHECK! banner**: Appears in the centre when the current player is in check.
-- **Valid move highlights**: Green squares for legal destinations, red for captures, yellow for the selected piece.
-- **Controls panel** (bottom-left): Quick reference for all keyboard and mouse controls.
+### HUD Panels
 
-### Captured Pieces Panel
-Displayed on the right side of the screen, split into two strips:
+**Move History** (top-left): Shows White and Black moves paired row by row. Panel height grows from a minimum of 5 rows up to a fixed maximum of 15 rows. Once at 15 rows, the window slides forward one pair per new White move, always showing the most recent 15 pairs in chronological order top-to-bottom. Black's cell on the current bottom row is blank until Black responds.
 
-| Panel | Background | Piece colour | Shows |
-|---|---|---|---|
-| **Captured by Black** (top) | Dark | White symbols | White pieces taken by Black |
-| **Captured by White** (bottom) | Light/cream | Dark symbols | Black pieces taken by White |
+**Turn Indicator** (top-right): Colour-coded badge showing whose turn it is.
 
-A **material advantage badge** (`+N`) appears next to the leading player's captured strip — white badge on the dark panel, dark badge on the light panel, so it is always readable.
+**CHECK! Banner** (centre-top): Appears when the current player is in check.
+
+**Captured Pieces Panel** (right side, two strips):
+- Top strip (dark background, white symbols): pieces captured by Black.
+- Bottom strip (light background, dark symbols): pieces captured by White.
+- Material advantage badge (`+N`) shown in the correct contrasting colour.
+
+**Clock Display** (right side): Black's clock at the top, White's at the bottom. Active player's clock glows green. Under 30 seconds turns red. Clocks freeze while paused or while a piece is animating.
+
+**Pause / Resume Button**: Centred between the two player blocks on the right panel.
+
+**Controls Panel** (bottom-left, 3 columns): Quick-reference for all mouse and keyboard controls.
 
 ### Time Controls
-- Default time is **10 minutes per player**, active from the very first move.
-- When starting a **New Game**, a time-selection screen lets you pick **10 min**, **15 min**, **30 min**, or **No Timer**.
-- Each player's clock is shown on the right panel — Black's clock at the top, White's at the bottom.
-- The **active clock** glows green. Clocks turn **red** when under 30 seconds.
-- If a player's time reaches zero, the game ends immediately with a "flag fallen" result.
-- Time is **frozen while the game is paused**.
+- Default: 10 minutes per player, active from the first move.
+- New Game time-selection screen: 10 min / 15 min / 30 min / No Timer.
+- Flag fall: if a player's clock reaches zero the game ends immediately.
+- Clocks are saved and restored exactly when loading a saved game.
 
 ### Pause
-- Click the **⏸ Pause** button (between the two clocks) or press **P** to pause.
-- While paused, the board area dims and a "PAUSED" banner appears. All piece interaction and clock ticking is suspended.
-- Click **▶ Resume** or press **P** / **Esc** to continue.
+- Press **P** or click the **Pause** button to pause. Press **P** / **Esc** or click **Resume** to continue.
+- While paused: clocks freeze, board clicks are blocked, the board area dims with a "PAUSED" banner.
 
 ### Save & Load
-- **Save** writes a JSON file to the `saves/` folder containing: board position, captured pieces, move history, whose turn it is, and the **remaining clock time for both players**.
-- **Load** fully restores all of the above — including the exact seconds left on each clock at the time of saving.
-- Up to 8 recent saves are shown in the load menu (most recent first).
-- Older saves without time data load gracefully, giving each player the full `time_control` duration.
+- Games are saved to the `saves/` folder as `Game01.json`, `Game02.json`, in sequential order.
+- **No save is created at the starting position** (zero moves played).
+- **No duplicate saves**: pressing S twice at the same position only creates one file; a second save is only created after at least one new move is played.
+- **Auto-save**: the game is automatically saved when it ends by checkmate, stalemate, or flag fall. A golden notification banner appears for 5 seconds confirming the filename.
+- **Manual save** (`S` key): creates a new sequential file; a green notification banner appears for 5 seconds.
+- **Save & Quit** button on the game-over screen: also saves sequentially.
+- **Load** (`L` key or game-over button): shows the 8 most recent saves. A notification banner appears for 5 seconds on successful load.
+- All notifications (save, load, auto-save) display for exactly **5 real seconds** using elapsed-millisecond timing — not frame counts.
 
 ### Game Over Screen
-Appears on checkmate, stalemate, or flag fall. Displays the result and reason, then offers:
-- **New Game** — opens the time-selection screen.
-- **Save & Quit** — saves the final position before returning to the menu.
-- **Load Game** — open the load menu.
-- **Quit App** — exits.
+Appears on checkmate, stalemate, flag fall, or quit (`Q`). Shows result and reason, then offers New Game, Save & Quit, Load Game, Quit App.
 
 ---
 
@@ -133,8 +131,10 @@ Appears on checkmate, stalemate, or flag fall. Displays the result and reason, t
 | Left-click a piece | Select it (highlights legal moves) |
 | Left-click a highlighted square | Move the selected piece |
 | Left-click the selected piece again | Deselect |
-| Left-drag | Orbit / rotate the camera |
+| Left-drag (no piece selected) | Orbit / rotate the camera |
 | Scroll wheel | Zoom in / out |
+
+> The camera cannot be orbited while a piece is selected or while a piece is animating.
 
 ### Keyboard
 | Key | Action |
@@ -143,43 +143,25 @@ Appears on checkmate, stalemate, or flag fall. Displays the result and reason, t
 | `↑` / `↓` | Tilt camera up / down |
 | `Z` / `X` | Zoom in / out |
 | `M` | Toggle board colour theme |
-| `P` | Pause / Resume |
-| `S` | Quick-save to slot 1 |
+| `S` | Save current game |
 | `L` | Open load game menu |
-| `N` | New game (opens time-selection screen) |
-| `R` | Hard reset (same as New Game) |
-| `Q` | Resign / quit to game-over screen |
+| `N` | New game (shows time-selection screen) |
+| `P` | Pause / Resume |
+| `Q` | Quit current game (shows game-over screen) |
+| `R` | Hard reset — deletes all saved games and starts fresh |
 | `Esc` | Deselect piece · Close load menu · Resume if paused |
-
----
-
-## Configuration
-
-A few constants at the top of `main3.py` can be tweaked without touching the rest of the code:
-
-| Constant | Default | Description |
-|---|---|---|
-| `WIDTH, HEIGHT` | `900, 650` | Window size in pixels |
-| `camera_angle_x` | `35.0` | Initial camera tilt |
-| `camera_angle_y` | `-30.0` | Initial camera rotation |
-| `camera_distance` | `28.0` | Initial zoom level |
-| `animation_speed` | `0.18` | Piece slide speed (squares per frame) |
-| `time_control` | `10*60` | Default game time in seconds per player |
-| `board_color_theme` | `"black_white"` | Starting theme (`"black_white"` or `"dark_blue"`) |
 
 ---
 
 ## Save File Format
 
-Saves are stored as human-readable JSON in `saves/`. Each file contains:
-
 ```json
 {
   "current_turn": "white",
-  "pieces": [ { "name": "king", "color": "white", "col": 3.0, "row": 0.0, "has_moved": false }, "..." ],
-  "captured_by_white": ["pawn", "knight"],
-  "captured_by_black": ["pawn"],
-  "move_history": [ { "piece": "pawn", "color": "white", "from": [4, 1], "to": [4, 3], "label": "e2e4" }, "..." ],
+  "pieces": [{ "name": "king", "color": "white", "col": 3.0, "row": 0.0, "has_moved": false }],
+  "captured_by_white": ["pawn"],
+  "captured_by_black": [],
+  "move_history": [{ "piece": "pawn", "color": "white", "from": [4,1], "to": [4,3], "label": "e2e4" }],
   "last_pawn_double": null,
   "white_time": 534.2,
   "black_time": 489.7,
@@ -189,8 +171,24 @@ Saves are stored as human-readable JSON in `saves/`. Each file contains:
 
 ---
 
+## Configuration
+
+Constants at the top of `main_v6.py`:
+
+| Constant | Default | Description |
+|---|---|---|
+| `WIDTH, HEIGHT` | `900, 650` | Window size in pixels |
+| `camera_angle_x` | `47.0` | Initial camera tilt |
+| `camera_angle_y` | `180.0` | Initial camera rotation |
+| `camera_distance` | `28.0` | Initial zoom level |
+| `animation_speed` | `0.36` | Piece slide speed (squares per frame) |
+| `time_control` | `10*60` | Default game time in seconds per player |
+| `board_color_theme` | `"black_white"` | Starting theme |
+
+---
+
 ## Known Limitations
 
-- Two-player local only — no AI opponent or online play.
-- The game window is a fixed size (900 × 650); resizing is not supported.
-- `.obj` models must be named exactly `{color}_{piece}.obj` (e.g. `white_knight.obj`).
+- Two-player local only — no AI opponent or network play.
+- Fixed window size (900 × 650); resizing is not supported.
+- Model files must be named exactly `{color}_{piece}.obj` (e.g. `white_knight.obj`).
