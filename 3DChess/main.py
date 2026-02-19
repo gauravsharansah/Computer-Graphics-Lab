@@ -24,10 +24,10 @@ BOARD_OFFSET_Y =  2.0
 board_color_theme = "black_white"
 
 # Camera
-camera_angle_x  = 35.0
-camera_angle_y  = -30.0
+camera_angle_x  = 47.0
+camera_angle_y  = 180.0
 camera_distance = 28.0
-animation_speed = 0.18
+animation_speed = 0.36
 
 # Piece values
 PIECE_VALUES = {"pawn":1,"knight":3,"bishop":3,"rook":5,"queen":9,"king":0}
@@ -38,6 +38,7 @@ in_check         = False
 is_checkmate     = False
 is_stalemate     = False
 check_flash_t    = 0
+check_flash_color = None   # which color king is flashing ("white"/"black"/None)
 game_over        = False
 winner           = None
 _pending_check_update = False
@@ -355,25 +356,65 @@ def execute_move(piece,tc,tr):
         _pending_check_update = True
     return True
 
+_auto_save_notify   = ""    # message shown after auto-save
+_auto_save_notify_t = 0     # ms remaining to show it
+_game_already_saved = False # True when current game state already has a save file
+
+def _auto_save_game():
+    global _auto_save_notify, _auto_save_notify_t, _game_already_saved
+    if _game_already_saved:
+        return   # already has a save file — don't create a duplicate
+    fname = _next_save_name()
+    save_game(auto_name=fname)
+    _game_already_saved = True
+    _auto_save_notify   = f"Game auto-saved as {fname}"
+    _auto_save_notify_t = 5000  # show for 5 seconds (ms)
+
 def _update_check_state():
     global in_check,is_checkmate,is_stalemate,check_flash_t,game_over,winner
+    global check_flash_color, _auto_save_notify, _auto_save_notify_t
     in_check=_king_in_check(current_turn,pieces)
-    if in_check: check_flash_t=90
+    if in_check:
+        check_flash_t=90
+        check_flash_color=current_turn
+    else:
+        check_flash_color=None
     has_moves=has_any_legal_move(current_turn)
     is_checkmate=in_check and not has_moves
     is_stalemate=(not in_check) and (not has_moves)
     if is_checkmate:
         game_over=True; winner="black" if current_turn=="white" else "white"
+        _auto_save_game()
     elif is_stalemate:
         game_over=True; winner="draw"
+        _auto_save_game()
 
 
 # ==========================
 # SAVE / LOAD
 # ==========================
-def save_game(slot=None):
-    ts=datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    fname=f"game_{ts}.json" if slot is None else f"slot_{slot}.json"
+_last_saved_move_count = -1   # track move count at last save to prevent duplicates
+
+def _next_save_name():
+    """Return next sequential filename: Game01.json, Game02.json ..."""
+    existing = [f for f in os.listdir(SAVES_DIR) if f.startswith("Game") and f.endswith(".json")]
+    nums = []
+    for f in existing:
+        try: nums.append(int(f[4:6]))
+        except: pass
+    n = max(nums)+1 if nums else 1
+    return f"Game{n:02d}.json"
+
+def save_game(auto_name=None):
+    global _last_saved_move_count
+    # Never save in the starting position (no moves played yet)
+    if len(move_history) == 0:
+        return None
+    # Prevent duplicate saves (same position saved twice without any new move)
+    if auto_name is None:   # manual save — enforce no-duplicate rule
+        if len(move_history) == _last_saved_move_count:
+            return None   # nothing new to save
+    fname = auto_name if auto_name else _next_save_name()
     path=os.path.join(SAVES_DIR,fname)
     data={
         "current_turn":current_turn,
@@ -387,6 +428,7 @@ def save_game(slot=None):
         "time_control": time_control,
     }
     with open(path,"w") as f: json.dump(data,f,indent=2)
+    _last_saved_move_count = len(move_history)
     return fname
 
 def load_game(fname):
@@ -425,11 +467,12 @@ def load_game(fname):
         black_time = None
     last_tick_time=None; FLAG_FALLEN=False; time_select_active=False
     global game_paused; game_paused=False
+    global _game_already_saved; _game_already_saved = True   # loaded = already on disk
     _update_check_state()
     return True
 
 def list_saves():
-    saves=sorted([f for f in os.listdir(SAVES_DIR) if f.endswith(".json")],reverse=True)
+    saves=sorted([f for f in os.listdir(SAVES_DIR) if f.endswith(".json")], reverse=True)
     return saves[:8]
 
 
@@ -454,8 +497,8 @@ def initialize_pieces():
         white_time=None; black_time=None
     last_tick_time=None; FLAG_FALLEN=False; time_select_active=False
     global game_paused; game_paused=False
-    
-    # Files h→a (col 0=h, col 7=a) so e1 (col 3) is DARK
+    global _game_already_saved; _game_already_saved = False
+        # Files h→a (col 0=h, col 7=a) so e1 (col 3) is DARK
     pieces.append(Piece("rook",   "white", 0, 0))  # h1
     pieces.append(Piece("knight", "white", 1, 0))  # g1
     pieces.append(Piece("bishop", "white", 2, 0))  # f1
@@ -499,7 +542,7 @@ def init_opengl():
     glLightfv(GL_LIGHT1, GL_SPECULAR, [0.20,  0.22, 0.30, 1.0])
     glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR,  [0.9, 0.9, 0.85, 1.0])
     glMaterialf (GL_FRONT_AND_BACK, GL_SHININESS, 80.0)
-    glClearColor(0.10, 0.07, 0.04, 1.0)
+    glClearColor(0.34, 0.52, 0.20, 1.0)   # garden grass green
     glMatrixMode(GL_PROJECTION); glLoadIdentity()
     gluPerspective(45,WIDTH/HEIGHT,0.1,200)
     glMatrixMode(GL_MODELVIEW)
@@ -512,6 +555,27 @@ def set_camera():
     glRotatef(camera_angle_y,0,1,0)
 
 
+def draw_background():
+    """Paint a garden-style gradient background: sky at top, grass at bottom."""
+    glDisable(GL_LIGHTING); glDisable(GL_DEPTH_TEST)
+    glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity()
+    glOrtho(0,1,0,1,-1,1)
+    glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity()
+    glBegin(GL_QUADS)
+    # Top-left  – sky blue
+    glColor3f(0.40, 0.68, 0.90); glVertex2f(0,1)
+    # Top-right – sky blue
+    glColor3f(0.50, 0.78, 0.98); glVertex2f(1,1)
+    # Bottom-right – warm grass green
+    glColor3f(0.22, 0.48, 0.14); glVertex2f(1,0)
+    # Bottom-left – warm grass green
+    glColor3f(0.18, 0.42, 0.10); glVertex2f(0,0)
+    glEnd()
+    glMatrixMode(GL_PROJECTION); glPopMatrix()
+    glMatrixMode(GL_MODELVIEW);  glPopMatrix()
+    glEnable(GL_DEPTH_TEST); glEnable(GL_LIGHTING)
+
+
 # ==========================
 # DRAW BOARD
 # ==========================
@@ -519,10 +583,10 @@ def draw_board():
     glDisable(GL_LIGHTING)
     for col in range(BOARD_SIZE):
         for row in range(BOARD_SIZE):
-            if board_color_theme=="dark_blue":
-                light,dark=(0.75,0.85,0.95),(0.10,0.20,0.45)
+            if board_color_theme=="red_white":
+                light,dark=(0.75,0.85,0.95),(0.75,0.25,0.30)
             else:
-                light,dark=(0.94,0.88,0.70),(0.32,0.18,0.06)
+                light,dark=(0.94,0.88,0.70),(0.05,0.10,0.45)
             color=light if(col+row)%2==0 else dark
             if selected_piece and selected_piece.board_col()==col and selected_piece.board_row()==row:
                 color=(0.85,0.85,0.10)
@@ -533,7 +597,7 @@ def draw_board():
             glVertex3f(x0+SQUARE_SIZE,0,z0+SQUARE_SIZE); glVertex3f(x0,0,z0+SQUARE_SIZE)
             glEnd()
     bw=0.5; H=BOARD_HALF
-    glColor3f(0.35,0.20,0.05); glBegin(GL_QUADS)
+    glColor3f(0.65,0.65,0.65); glBegin(GL_QUADS)
     glVertex3f(-H-bw,-0.05,-H-bw); glVertex3f(H+bw,-0.05,-H-bw); glVertex3f(H+bw,-0.05,-H);    glVertex3f(-H-bw,-0.05,-H)
     glVertex3f(-H-bw,-0.05, H);    glVertex3f(H+bw,-0.05, H);    glVertex3f(H+bw,-0.05, H+bw); glVertex3f(-H-bw,-0.05, H+bw)
     glVertex3f(-H-bw,-0.05,-H-bw); glVertex3f(-H,  -0.05,-H-bw); glVertex3f(-H,  -0.05, H+bw); glVertex3f(-H-bw,-0.05, H+bw)
@@ -651,7 +715,7 @@ def draw_chesscom_captured(surface, font_xs, font_sm, font_md):
                 bx=PANEL_X+8; by=cy+font_xs.get_height()+4
             surface.blit(badge,(bx,by))
 
-    top_y=55; strip_h=68
+    top_y=B_CAP_Y; strip_h=STRIP_H
     # Top panel: "Black captured" = white pieces captured by black player
     # Show pieces in WHITE color on DARK background (white pieces on dark bg)
     render_strip(surface, captured_by_black, top_y, strip_h,
@@ -662,7 +726,7 @@ def draw_chesscom_captured(surface, font_xs, font_sm, font_md):
                  badge_col=(240,240,240),         # white +N badge on dark bg
                  adv_for_this_player=(adv_color=="black"))
 
-    bot_y = HEIGHT - strip_h - 55
+    bot_y = W_CAP_Y
     # Bottom panel: "White captured" = black pieces captured by white player
     # Show pieces in BLACK color on LIGHT background (black pieces on light bg)
     render_strip(surface, captured_by_white, bot_y, strip_h,
@@ -731,13 +795,31 @@ def handle_time_select_click(pos):
 # ==========================
 # DRAW CLOCK DISPLAY
 # ==========================
+# Layout constants shared between draw_clocks and draw_chesscom_captured
+CLOCK_H   = 44
+STRIP_H   = 68
+LABEL_GAP = 22
+CLOCK_GAP = 6
+CX_CLOCK  = WIDTH - 185
+CW_CLOCK  = 175
+
+# Black block (top of right panel):
+#   label at y=22, clock at y=44, captured at y=94
+B_CLOCK_Y = 44
+B_CAP_Y   = B_CLOCK_Y + CLOCK_H + CLOCK_GAP   # 94
+
+# White block (bottom of right panel):
+#   captured near bottom, clock above it, label above clock
+W_CAP_Y   = HEIGHT - STRIP_H - 30              # 552
+W_CLOCK_Y = W_CAP_Y - CLOCK_H - CLOCK_GAP     # 502
+W_LABEL_Y = W_CLOCK_Y - LABEL_GAP             # 480
+
 def draw_clocks(surface, font_md, font_lg):
     global pause_rect
     if white_time is None and black_time is None: return
     def fmt(t):
         t=max(0,int(t)); m=t//60; s=t%60
         return f"{m}:{s:02d}"
-    CX=WIDTH-185; CW=175
     wt=white_time if white_time is not None else 0
     bt=black_time  if black_time  is not None else 0
     w_active=(current_turn=="white") and not game_over and not game_paused
@@ -752,27 +834,33 @@ def draw_clocks(surface, font_md, font_lg):
             border=(255,80,80,255) if active else (160,50,50,160)
         if game_paused:
             bg=(50,50,80,220); border=(160,140,60,200)
-        pygame.draw.rect(surface,bg,(CX,y,CW,44),border_radius=8)
-        pygame.draw.rect(surface,border,(CX,y,CW,44),2,border_radius=8)
+        pygame.draw.rect(surface,bg,(CX_CLOCK,y,CW_CLOCK,CLOCK_H),border_radius=8)
+        pygame.draw.rect(surface,border,(CX_CLOCK,y,CW_CLOCK,CLOCK_H),2,border_radius=8)
         tc=(255,255,255) if active else (160,160,160)
         if low and not game_paused: tc=(255,180,180) if active else (200,100,100)
         if game_paused: tc=(180,175,210)
         txt=font_lg.render(fmt(remaining),True,tc)
-        surface.blit(txt,(CX+(CW-txt.get_width())//2, y+(44-txt.get_height())//2))
-    top_y=130
-    bot_y=HEIGHT-130-44
-    draw_clock_box(top_y, bt, b_active, b_low)
-    draw_clock_box(bot_y, wt, w_active, w_low)
-    blab=font_md.render("Black",True,(180,180,200))
-    wlab=font_md.render("White",True,(200,190,160))
-    surface.blit(blab,(CX+(CW-blab.get_width())//2, top_y-22))
-    surface.blit(wlab,(CX+(CW-wlab.get_width())//2, bot_y-22))
+        surface.blit(txt,(CX_CLOCK+(CW_CLOCK-txt.get_width())//2, y+(CLOCK_H-txt.get_height())//2))
 
-    # ── Pause / Resume button between the two clocks ───────────────────────
+    # Draw black clock and label
+    draw_clock_box(B_CLOCK_Y, bt, b_active, b_low)
+    # "Black" label — sky-blue tint to suit garden background
+    blab=font_md.render("Black",True,(30,60,140))
+    surface.blit(blab,(CX_CLOCK+(CW_CLOCK-blab.get_width())//2, B_CLOCK_Y-LABEL_GAP+2))
+
+    # Draw white clock and label
+    draw_clock_box(W_CLOCK_Y, wt, w_active, w_low)
+    # "White" label — dark grass-green tint to suit garden background
+    wlab=font_md.render("White",True,(20,80,20))
+    surface.blit(wlab,(CX_CLOCK+(CW_CLOCK-wlab.get_width())//2, W_LABEL_Y+2))
+
+    # ── Pause / Resume button — centred between black block bottom and white block top ──
     if not game_over and not time_select_active:
-        mid_y = (top_y + 44 + bot_y) // 2
-        btn_w, btn_h = 90, 32
-        btn_x = CX + (CW - btn_w) // 2
+        black_block_bottom = B_CAP_Y + STRIP_H          # 162
+        white_block_top    = W_LABEL_Y                   # 480
+        mid_y = (black_block_bottom + white_block_top) // 2
+        btn_w, btn_h = 120, 32
+        btn_x = CX_CLOCK + (CW_CLOCK - btn_w) // 2
         btn_y = mid_y - btn_h // 2
         if game_paused:
             bg=(70,130,70,240); border=(100,210,100,255); label="▶  Resume"
@@ -789,11 +877,9 @@ def draw_clocks(surface, font_md, font_lg):
     if game_paused:
         ov = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
         ov.fill((0, 0, 0, 0))
-        # Dim only the board area (leave right panel visible)
         board_area = pygame.Rect(0, 0, WIDTH - 190, HEIGHT)
         pygame.draw.rect(ov, (0, 0, 0, 160), board_area)
         surface.blit(ov, (0, 0))
-        # "PAUSED" banner centred on board area
         bx = (WIDTH - 190) // 2
         pi_font = pygame.font.SysFont("segoeui", 48, bold=True)
         pi = pi_font.render("PAUSED", True, (230, 210, 80))
@@ -826,6 +912,9 @@ def draw_gameover_screen(surface, font_sm, font_md, font_lg):
     if winner=="draw":
         title_txt="Draw  —  Stalemate"; title_col=(220,210,100)
         bar_col=(60,60,20,230)
+    elif winner=="quit":
+        title_txt="Game Quit"; title_col=(200,200,200)
+        bar_col=(50,50,50,230)
     elif winner=="white":
         title_txt="WHITE  WINS!"; title_col=(255,255,220)
         bar_col=(40,40,40,240)
@@ -841,6 +930,10 @@ def draw_gameover_screen(surface, font_sm, font_md, font_lg):
     sub_txt=""
     if FLAG_FALLEN:
         sub_txt="on time (flag fallen)"
+    elif winner=="quit":
+        sub_txt="Game was quit by player"
+    elif winner=="draw":
+        sub_txt="by Stalemate"
     elif winner and winner!="draw":
         sub_txt="by Checkmate"
     if sub_txt:
@@ -909,35 +1002,49 @@ def draw_load_menu(surface,font_sm,font_md):
 def draw_overlay(surface, font_xs, font_sm, font_md, font_lg):
     surface.fill((0,0,0,0))
 
-    # ── Move history (FIXED: proper height calculation) ───────────────────
-    hist_w = 260
+    # ── Move history — grows 5→15 pairs, then scrolls top-down ──────────────
+    MIN_ROWS = 5
+    MAX_ROWS = 15
+    ROW_H    = 20
+    hist_w   = 170
+
     white_moves = [m for m in move_history if m["color"]=="white"]
     black_moves = [m for m in move_history if m["color"]=="black"]
-    max_rows = max(len(white_moves), len(black_moves), 1)
-    
-    # FIXED: Added extra padding (68 instead of 48) to prevent text cutoff
-    hist_h = max(max_rows * 20 + 70, 130)
-    
+
+    # Build pairs: (white_label, black_label_or_None)
+    total_pairs = len(white_moves)
+    pairs = []
+    for i in range(total_pairs):
+        w = white_moves[i]["label"]
+        b = black_moves[i]["label"] if i < len(black_moves) else None
+        pairs.append((w, b))
+
+    # How many rows to display (clamped between MIN and MAX)
+    display_rows = max(MIN_ROWS, min(total_pairs, MAX_ROWS))
+
+    # Which pairs to show: always the latest display_rows pairs
+    visible = pairs[-display_rows:] if len(pairs) > display_rows else pairs
+
+    # Panel height based on display_rows (fixed once at MAX)
+    hist_h = display_rows * ROW_H + 56
+
     pygame.draw.rect(surface,(0,0,0,170),(5,5,hist_w,hist_h),border_radius=8)
     pygame.draw.rect(surface,(200,180,50,130),(5,5,hist_w,hist_h),1,border_radius=8)
     lbl=font_md.render("Move History",True,(220,200,80))
     surface.blit(lbl,(12,10))
     pygame.draw.line(surface,(180,160,50),(12,32),(hist_w-8,32),1)
-    
-    # Column headers
+
     wh=font_sm.render("White",True,(230,230,230))
-    bh=font_sm.render("Black",True,(160,160,255))
+    bh_lbl=font_sm.render("Black",True,(160,160,255))
     surface.blit(wh,(22,36))
-    surface.blit(bh,(190,36))
-    
-    # Draw moves
+    surface.blit(bh_lbl,(110,36))
+
     y_start = 56
-    for i, entry in enumerate(white_moves[-20:]):
-        y = y_start + i * 20
-        surface.blit(font_sm.render(entry["label"],True,(230,230,230)),(22,y))
-    for i, entry in enumerate(black_moves[-20:]):
-        y = y_start + i * 20
-        surface.blit(font_sm.render(entry["label"],True,(160,160,255)),(190,y))
+    for i, (w_lbl, b_lbl) in enumerate(visible):
+        y = y_start + i * ROW_H
+        surface.blit(font_sm.render(w_lbl, True, (230,230,230)), (22, y))
+        if b_lbl:
+            surface.blit(font_sm.render(b_lbl, True, (160,160,255)), (110, y))
 
     # ── Turn indicator ─────────────────────────────────────────────────────
     if not game_over:
@@ -955,41 +1062,47 @@ def draw_overlay(surface, font_xs, font_sm, font_md, font_lg):
         pygame.draw.rect(surface,(80,0,0,200),(cx-10,8,ci.get_width()+20,34),border_radius=7)
         surface.blit(ci,(cx,12))
 
-    # ── Controls panel ─────────────────────────────────────────────────────
-    col1=[
-        ("── Mouse ──",True,""),
-        ("Left-click piece",False,"Select piece"),
-        ("Left-click square",False,"Move / capture"),
-        ("Left-drag",False,"Orbit camera"),
-        ("Scroll wheel",False,"Zoom in/out"),
+    # ── Controls panel — 3 columns ─────────────────────────────────────────
+    col_mouse=[
+        ("── Mouse ──",True),
+        ("Left-click piece","Select piece"),
+        ("Left-click sq.","Move / capture"),
+        ("Left-drag","Orbit camera"),
+        ("Scroll wheel","Zoom in/out"),
     ]
-    col2=[
-        ("── Keys ──",True,""),
-        ("Arrow ← →",False,"Rotate L/R"),
-        ("Arrow ↑ ↓",False,"Tilt up/down"),
-        ("Z / X",False,"Zoom in/out"),
-        ("M",False,"Board theme"),
-        ("S",False,"Save game (slot 1)"),
-        ("L",False,"Load game menu"),
-        ("N",False,"New game"),
-        ("P",False,"Pause / Resume"),
-        ("Q",False,"Quit to menu"),
-        ("R",False,"Hard reset"),
-        ("Esc",False,"Deselect"),
+    col_keys1=[
+        ("── Keys A ──",True),
+        ("Arrow ← →","Rotate L/R"),
+        ("Arrow ↑ ↓","Tilt up/down"),
+        ("Z / X","Zoom in/out"),
+        ("M","Board theme"),
+        ("S","Save game"),
     ]
-    rh=17; pad=8; cw=240
-    rows=max(len(col1),len(col2))
-    ph=rows*rh+pad*2+6; py=HEIGHT-ph-5; pw=cw*2+20
+    col_keys2=[
+        ("── Keys B ──",True),
+        ("L","Load menu"),
+        ("N","New game"),
+        ("P","Pause/Resume"),
+        ("Q","Quit game"),
+        ("R","Hard reset"),
+        ("Esc","Deselect"),
+    ]
+    rh=16; pad=6; cw=223
+    rows=max(len(col_mouse),len(col_keys1),len(col_keys2))
+    ph=rows*rh+pad*2+4
+    pw=cw*3+pad*2+8
+    py=HEIGHT-ph-5
     pygame.draw.rect(surface,(0,0,0,170),(5,py,pw,ph),border_radius=8)
     pygame.draw.rect(surface,(200,180,50,100),(5,py,pw,ph),1,border_radius=8)
-    for ci_,col_lines in enumerate((col1,col2)):
-        px2=14+ci_*(cw+4); cy2=py+pad
+    for ci_,col_lines in enumerate((col_mouse,col_keys1,col_keys2)):
+        px2=12+ci_*(cw+4); cy2=py+pad
         for item in col_lines:
-            hd=item[1]; kt=item[0]; dt=item[2] if len(item)>2 else ""
-            kc=(220,200,80) if hd else(180,220,255)
+            hd=(item[1] is True)
+            kt=item[0]; dt="" if hd else item[1]
+            kc=(220,200,80) if hd else (180,220,255)
             surface.blit(font_sm.render(kt,True,kc),(px2,cy2))
             if not hd and dt:
-                surface.blit(font_sm.render(dt,True,(200,200,200)),(px2+105,cy2))
+                surface.blit(font_sm.render(dt,True,(200,200,200)),(px2+108,cy2))
             cy2+=rh
 
     # ── Captured pieces panel ──────────────────────────────────────────────
@@ -1012,20 +1125,22 @@ def draw_overlay(surface, font_xs, font_sm, font_md, font_lg):
         try:
             sx, sy, _ = gluProject(wx, 0.0, wz, modelview, projection, viewport)
             sy = viewport[3] - sy
-            is_light = (col) % 2 == 0
-            txt_col = (40,30,15) if is_light else (220,200,150)
+            # is_light = (col) % 2 == 0
+            # txt_col = (40,30,15) if is_light else (220,200,150)
+
+            txt_col = (0,255,0)
             lbl = coord_font.render(files[col], True, txt_col)
             surface.blit(lbl, (int(sx - lbl.get_width()//2), int(sy - lbl.get_height()//2)))
         except: pass
     
     for row in range(8):
-        wx = -BOARD_HALF - 0.3
+        wx = BOARD_HALF + 0.3
         wz = (row - BOARD_SIZE/2.0 + 0.5)*SQUARE_SIZE
         try:
             sx, sy, _ = gluProject(wx, 0.0, wz, modelview, projection, viewport)
             sy = viewport[3] - sy
-            is_light = (row) % 2 == 0
-            txt_col = (40,30,15) if is_light else (220,200,150)
+
+            txt_col = (0,255,0)
             lbl = coord_font.render(ranks[row], True, txt_col)
             surface.blit(lbl, (int(sx - lbl.get_width()//2), int(sy - lbl.get_height()//2)))
         except: pass
@@ -1046,22 +1161,26 @@ def draw_promotion_menu(surface, font_md, font_lg):
     global promotion_rects, font_sm_global
     promotion_rects=[]
     choices=["queen","rook","bishop","knight"]
-    syms={"queen":"♛","rook":"♜","bishop":"♝","knight":"♞"}
-    bw,bh=360,130; bx=(WIDTH-bw)//2; by=(HEIGHT-bh)//2
+    # Use color-appropriate symbols based on whose pawn is promoting
+    if promotion_piece and promotion_piece.color == "white":
+        syms={"queen":"♕","rook":"♖","bishop":"♗","knight":"♘"}
+    else:
+        syms={"queen":"♛","rook":"♜","bishop":"♝","knight":"♞"}
+    bw,bh=380,130; bx=(WIDTH-bw)//2; by=(HEIGHT-bh)//2
     pygame.draw.rect(surface,(25,25,40,230),(bx,by,bw,bh),border_radius=10)
     pygame.draw.rect(surface,(200,180,50,255),(bx,by,bw,bh),2,border_radius=10)
     t=font_md.render("Promote pawn to:",True,(220,200,80))
     surface.blit(t,(bx+(bw-t.get_width())//2,by+8))
-    btn_w=72; gap=(bw-4*btn_w-20)//3
+    btn_w=76; gap=(bw-4*btn_w-20)//3
+    sym_font = pygame.font.SysFont("segoeuisymbol", 38, bold=True)
     for i,ch in enumerate(choices):
-        rx=bx+10+i*(btn_w+gap); ry=by+46
-        rect=pygame.Rect(rx,ry,btn_w,68)
+        rx=bx+10+i*(btn_w+gap); ry=by+38
+        rect=pygame.Rect(rx,ry,btn_w,76)
         pygame.draw.rect(surface,(70,70,95,230),rect,border_radius=7)
         pygame.draw.rect(surface,(180,160,40,255),rect,1,border_radius=7)
-        si=font_lg.render(syms[ch],True,(240,240,240))
-        surface.blit(si,(rx+(btn_w-si.get_width())//2,ry+4))
-        li=font_sm_global.render(ch[:4].capitalize(),True,(200,200,200))
-        surface.blit(li,(rx+(btn_w-li.get_width())//2,ry+46))
+        # Draw large symbol centred in button
+        si=sym_font.render(syms[ch],True,(240,240,240))
+        surface.blit(si,(rx+(btn_w-si.get_width())//2, ry+(76-si.get_height())//2))
         promotion_rects.append((rect,ch))
 
 def handle_promotion_click(pos):
@@ -1085,9 +1204,10 @@ def main():
     global selected_piece,board_color_theme,pieces
     global promotion_active,current_turn,font_sm_global
     global check_flash_t,game_over,winner,load_menu_active,_pending_check_update
-    global is_checkmate,is_stalemate,in_check
+    global is_checkmate,is_stalemate,in_check,check_flash_color
     global white_time,black_time,last_tick_time,FLAG_FALLEN,time_select_active,time_control
     global game_paused, pause_rect
+    global _last_saved_move_count, _auto_save_notify, _auto_save_notify_t, _game_already_saved
 
     pygame.init(); pygame.font.init()
     screen=pygame.display.set_mode((WIDTH,HEIGHT),DOUBLEBUF|OPENGL)
@@ -1101,27 +1221,29 @@ def main():
     font_sm_global=font_sm
 
     overlay=pygame.Surface((WIDTH,HEIGHT),pygame.SRCALPHA)
-    dragging=False; drag_start=(0,0); DRAG_THRESH=5
-    save_notify=""; save_notify_t=0
+    dragging=False; drag_start=(0,0); DRAG_THRESH=5; _drag_allowed=True
+    save_notify=""; save_notify_t=0   # ms remaining
 
     while True:
         clock.tick(60)
         dt_ms = clock.get_time()
         if check_flash_t>0: check_flash_t-=1
-        if save_notify_t>0: save_notify_t-=1
+        if save_notify_t>0:        save_notify_t        = max(0, save_notify_t - dt_ms)
+        if _auto_save_notify_t>0:  _auto_save_notify_t  = max(0, _auto_save_notify_t - dt_ms)
 
         # ── Tick clocks ────────────────────────────────────────────────────
-        if not time_select_active and not game_over and not promotion_active and not game_paused:
+        _any_animating = any(p.animating for p in pieces)
+        if not time_select_active and not game_over and not promotion_active and not game_paused and not _any_animating:
             if white_time is not None or black_time is not None:
                 dt_sec = dt_ms / 1000.0
                 if current_turn=="white" and white_time is not None:
                     white_time = max(0.0, white_time - dt_sec)
                     if white_time<=0 and not FLAG_FALLEN:
-                        FLAG_FALLEN=True; game_over=True; winner="black"
+                        FLAG_FALLEN=True; game_over=True; winner="black"; _auto_save_game()
                 elif current_turn=="black" and black_time is not None:
                     black_time = max(0.0, black_time - dt_sec)
                     if black_time<=0 and not FLAG_FALLEN:
-                        FLAG_FALLEN=True; game_over=True; winner="white"
+                        FLAG_FALLEN=True; game_over=True; winner="white"; _auto_save_game()
 
         for event in pygame.event.get():
             if event.type==QUIT: pygame.quit(); sys.exit()
@@ -1130,24 +1252,35 @@ def main():
                 if event.key==K_ESCAPE:
                     if load_menu_active: load_menu_active=False
                     elif game_paused: game_paused=False
-                    elif selected_piece: selected_piece.selected=False; selected_piece=None
+                    elif selected_piece:
+                        selected_piece.selected=False; selected_piece=None; _drag_allowed=True
                 elif event.key==K_p:
                     if not game_over and not time_select_active:
                         game_paused = not game_paused
                 elif event.key==K_r:
-                    time_select_active=True; selected_piece=None
+                    # Hard reset: delete ALL saved games then start fresh
+                    for f in os.listdir(SAVES_DIR):
+                        if f.endswith(".json"):
+                            try: os.remove(os.path.join(SAVES_DIR,f))
+                            except: pass
+                    time_select_active=True; selected_piece=None; _drag_allowed=True
                 elif event.key==K_n:
                     time_select_active=True; selected_piece=None
                 elif event.key==K_q:
-                    game_over=True
-                    if winner is None: winner="draw"
+                    if not game_over:
+                        game_over=True; winner="quit"
                 elif event.key==K_s:
-                    fname=save_game(slot=1)
-                    save_notify=f"Saved: {fname}"; save_notify_t=180
+                    fname=save_game()
+                    if fname:
+                        save_notify=f"Saved: {fname}"; save_notify_t=5000
+                    elif len(move_history)==0:
+                        save_notify="No moves played yet — nothing to save"; save_notify_t=5000
+                    else:
+                        save_notify="Already saved (play a move first)"; save_notify_t=5000
                 elif event.key==K_l:
                     load_menu_active=not load_menu_active
                 elif event.key==K_m:
-                    board_color_theme="dark_blue" if board_color_theme=="black_white" else "black_white"
+                    board_color_theme="red_white" if board_color_theme=="blue_white" else "blue_white"
                 elif event.key==K_LEFT:  camera_angle_y-=3
                 elif event.key==K_RIGHT: camera_angle_y+=3
                 elif event.key==K_UP:    camera_angle_x=max(-10,camera_angle_x-3)
@@ -1156,12 +1289,15 @@ def main():
                 elif event.key==K_x:     camera_distance=min(60,camera_distance+1)
 
             elif event.type==MOUSEBUTTONDOWN:
-                if   event.button==1: dragging=False; drag_start=event.pos
+                if event.button==1:
+                    dragging=False; drag_start=event.pos
+                    # Only allow drag-to-orbit when no piece is selected and not animating
+                    _drag_allowed = (selected_piece is None) and not _any_animating
                 elif event.button==4: camera_distance=max(10,camera_distance-1)
                 elif event.button==5: camera_distance=min(60,camera_distance+1)
 
             elif event.type==MOUSEMOTION:
-                if pygame.mouse.get_pressed()[0]:
+                if pygame.mouse.get_pressed()[0] and _drag_allowed and selected_piece is None:
                     dx=event.pos[0]-drag_start[0]; dy=event.pos[1]-drag_start[1]
                     if abs(dx)>DRAG_THRESH or abs(dy)>DRAG_THRESH: dragging=True
                     if dragging:
@@ -1169,7 +1305,10 @@ def main():
                         camera_angle_x=max(-10,min(85,camera_angle_x+event.rel[1]*0.4))
 
             elif event.type==MOUSEBUTTONUP:
-                if event.button==1 and not dragging:
+                if event.button==1:
+                    was_dragging = dragging
+                    dragging = False   # always reset on button-up
+                    if was_dragging: continue   # skip click logic if it was a drag
                     pos=event.pos
                     if time_select_active:
                         handle_time_select_click(pos)
@@ -1189,7 +1328,7 @@ def main():
                                 else:
                                     if load_game(fname):
                                         load_menu_active=False
-                                        save_notify=f"Loaded: {fname}"; save_notify_t=180
+                                        save_notify=f"Loaded: {fname}"; save_notify_t=5000
                                 break
                         continue
                     if game_over:
@@ -1198,7 +1337,8 @@ def main():
                                 if key=="new":
                                     time_select_active=True; selected_piece=None
                                 elif key=="saveq":
-                                    fname=save_game(); save_notify=f"Saved: {fname}"; save_notify_t=180
+                                    _an=_next_save_name(); fname=save_game(auto_name=_an)
+                                    save_notify=f"Saved: {fname}"; save_notify_t=5000
                                     game_over=True
                                 elif key=="load":
                                     load_menu_active=True
@@ -1212,6 +1352,8 @@ def main():
                         # Only allow clicking the pause/resume button
                         if pause_rect and pause_rect.collidepoint(pos):
                             game_paused = False
+                    elif _any_animating:
+                        pass  # silently block all board clicks during animation
                     else:
                         sq=mouse_to_board(*pos)
                         if sq:
@@ -1219,14 +1361,17 @@ def main():
                             if selected_piece is None:
                                 if clicked and clicked.color==current_turn:
                                     selected_piece=clicked; clicked.selected=True
+                                    _drag_allowed=False  # lock camera while piece selected
                             else:
                                 if clicked is selected_piece:
                                     selected_piece.selected=False; selected_piece=None
+                                    _drag_allowed=True
                                 elif clicked and clicked.color==current_turn:
                                     selected_piece.selected=False; selected_piece=clicked; clicked.selected=True
                                 else:
                                     if execute_move(selected_piece,tc,tr):
                                         selected_piece.selected=False; selected_piece=None
+                                        _drag_allowed=True
 
         for p in pieces: p.animate_step()
         
@@ -1235,9 +1380,11 @@ def main():
             _update_check_state()
 
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+        draw_background()
         set_camera(); draw_board(); draw_shadows(); draw_move_highlights()
         checked_king=None
-        if in_check and check_flash_t>0: checked_king=_find_king(current_turn,pieces)
+        if in_check and check_flash_t>0 and check_flash_color:
+            checked_king=_find_king(check_flash_color,pieces)
         for p in pieces:
             p.draw(flash_red=(p is checked_king and(check_flash_t//8)%2==0))
 
@@ -1249,6 +1396,11 @@ def main():
             nx=(WIDTH-ni.get_width())//2; ny=HEIGHT-28
             pygame.draw.rect(overlay,(0,0,0,180),(nx-8,ny-4,ni.get_width()+16,ni.get_height()+8),border_radius=6)
             overlay.blit(ni,(nx,ny))
+        if _auto_save_notify_t>0:
+            ani=font_sm.render(_auto_save_notify,True,(255,220,80))
+            anx=(WIDTH-ani.get_width())//2; any_=HEIGHT-52
+            pygame.draw.rect(overlay,(0,0,0,180),(anx-8,any_-4,ani.get_width()+16,ani.get_height()+8),border_radius=6)
+            overlay.blit(ani,(anx,any_))
 
         overlay_data=pygame.image.tostring(overlay,"RGBA",True)
         glWindowPos2i(0,0)
